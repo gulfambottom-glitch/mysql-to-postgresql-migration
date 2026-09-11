@@ -1,25 +1,40 @@
--- DROP FUNCTION public.sp_email_signature_templates_sel(varchar, int4, int4);
+DROP PROCEDURE IF EXISTS public.sp_email_signature_templates_sel(
+    varchar,
+    integer,
+    integer,
+    refcursor
+);
 
-CREATE OR REPLACE FUNCTION public.sp_email_signature_templates_sel(_templatename character varying, _pagenumber integer, _pagesize integer)
- RETURNS SETOF email_signature_templates
- LANGUAGE plpgsql
-AS $function$
+CREATE OR REPLACE PROCEDURE public.sp_email_signature_templates_sel(
+    IN _templatename varchar,
+    IN _pagenumber integer,
+    IN _pagesize integer,
+    INOUT _result refcursor
+)
+LANGUAGE plpgsql
+AS $procedure$
 DECLARE
     _offset integer;
 BEGIN
+
     _offset := (_pagenumber - 1) * _pagesize;
 
- RETURN QUERY select
- emailsignaturetemplateid,
- templatename,
- signaturetemplateurl,
- createdon,
- createdby
- from email_signature_templates
- where
- (_templatename is null or templatename like concat('%', _templatename, '%'))
- order by emailsignaturetemplateid desc
- limit _pagesize offset _offset;
+    OPEN _result FOR
+        SELECT
+            emailsignaturetemplateid,
+            templatename,
+            signaturetemplateurl,
+            createdon,
+            createdby
+        FROM email_signature_templates
+        WHERE
+            (
+                _templatename IS NULL
+                OR templatename LIKE CONCAT('%', _templatename, '%')
+            )
+        ORDER BY emailsignaturetemplateid DESC
+        LIMIT _pagesize
+        OFFSET _offset;
+
 END;
-$function$
-;
+$procedure$;
