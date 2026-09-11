@@ -1,161 +1,344 @@
--- DROP FUNCTION public.sp_employeelogin_auth(int8, varchar, varchar, int4, int4);
+DROP PROCEDURE IF EXISTS public.sp_employeelogin_auth(
+    bigint,
+    varchar,
+    varchar,
+    integer,
+    integer,
+    refcursor,
+    refcursor,
+    refcursor,
+    refcursor,
+    refcursor,
+    refcursor,
+    refcursor,
+    refcursor
+);
 
-CREATE OR REPLACE FUNCTION public.sp_employeelogin_auth(_userid bigint, _mobileno character varying, _emailid character varying, _usertypeid integer, _pagesize integer)
- RETURNS SETOF employeelogin
- LANGUAGE plpgsql
-AS $function$
+CREATE OR REPLACE PROCEDURE public.sp_employeelogin_auth(
+    IN _userid bigint,
+    IN _mobileno varchar,
+    IN _emailid varchar,
+    IN _usertypeid integer,
+    IN _pagesize integer,
+
+    INOUT _employee_result refcursor,
+    INOUT _menu_result refcursor,
+    INOUT _employee_list_result refcursor,
+    INOUT _department_result refcursor,
+    INOUT _hierarchy_result refcursor,
+    INOUT _company_result refcursor,
+    INOUT _layout_result refcursor,
+    INOUT _logo_result refcursor
+)
+LANGUAGE plpgsql
+AS $procedure$
+
 DECLARE
     _sqlstate TEXT;
     _errorno TEXT;
     _errortext TEXT;
     _message TEXT;
     _result VARCHAR;
+
     _accesslevelid bigint;
     _currentfinancialyear bigint;
     _routeprefix TEXT;
     _companyid bigint;
     _employeeid bigint;
+
 BEGIN
+
     _routeprefix := 'bot/ems';
- _accesslevelid := 0;
- _companyid := 0;
- _employeeid := 0;
- 
- if(_mobileno is not null and _mobileno != '') then
- begin
- select employeeid, accesslevelid, companyid from employeelogin
- where email = _emailid or mobile = _mobileno
- into _employeeid, _accesslevelid, _companyid;
- end;
- else
- begin
- select employeeid, accesslevelid, companyid from employeelogin
- where email = _emailid
- into _employeeid, _accesslevelid, _companyid;
- end;
- end if;
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- _currentfinancialyear := 0;
- select financialyear into _currentfinancialyear from company_setting
- where isprimary;
- 
+    _accesslevelid := 0;
+    _companyid := 0;
+    _employeeid := 0;
 
- RETURN QUERY select
- e.employeeuid userid,
- e.firstname,
- e.lastname,
- 'NA' address,
- e.email as emailid,
- e.mobile,
- e.reportingmanagerid,
- (
- select concat(firstname, ' ', lastname) from employees
- where 
- case
- when e.reportingmanagerid != 0 
- then employeeuid = e.reportingmanagerid
- else employeeuid = 1
- end
- ) managername,
- (
- select email from employees
- where 
- case
- when e.reportingmanagerid != 0 
- then employeeuid = e.reportingmanagerid
- else employeeuid = 1
- end
- ) manageremailid,
- e.designationid,
- _accesslevelid roleid,
- _usertypeid usertypeid,
- l.organizationid,
- l.companyid,
- (select employeecurrentregime from employee_declaration where employeeid = e.employeeuid and declarationfromyear = _currentfinancialyear) as employeecurrentregime,
- (select dob from employeepersonaldetail where employeeuid = e.employeeuid) as dob,
- e.updatedon,
- e.createdon,
- e.workshiftid
- from employees e
- inner join employeelogin l on l.employeeid = e.employeeuid
- where e.email = _emailid or e.mobile = _mobileno
- and e.isactive = true; 
- 
- if(_accesslevelid = 1) then
- begin
- -- postgres query warning: Multiple result sets are not supported in functions. Commented out: 
-select rm.catagory, rm.childs, concat(_routeprefix, '/', rm.link) link, rm.icon, rm.badge,
- rm.badgetype, rm.accesscode, 1 as permission from rolesandmenu rm
- where catagory <> 'Home' or childs <> 'Home';
- end;
- else
- begin
- -- postgres query warning: Multiple result sets are not supported in functions. Commented out: 
-select rm.catagory, rm.childs, concat(_routeprefix, '/', rm.link) link, rm.icon, rm.badge,
- rm.badgetype, rm.accesscode,
- accessibilityid permission from rolesandmenu rm
- left join role_accessibility_mapping r on r.accesscode = rm.accesscode
- where r.accesslevelid = _accesslevelid
- and r.accessibilityid > 0;
- end;
- end if;
 
- -- postgres query warning: Multiple result sets are not supported in functions. Commented out: 
-select 
- employeeuid as i, 
- concat(firstname, ' ', lastname) n,
- email as e,
- designationid as d
- from employees
- where companyid = _companyid and isactive = true
- order by updatedon desc, createdon desc
- limit _pagesize;
- 
- 
- -- postgres query warning: Multiple result sets are not supported in functions. Commented out: 
-select roleid as departmentid, rolename as departmentname from org_hierarchy
- where isdepartment = true;
- 
- 
- -- postgres query warning: Multiple result sets are not supported in functions. Commented out: 
-select * from org_hierarchy 
- where isdepartment = false
- and isactive = true
- and companyid = _companyid;
- 
- -- postgres query warning: Multiple result sets are not supported in functions. Commented out: 
-select 
- c.*, 
- cs.financialyear, 
- cs.employeecodelength, 
- cs.employeecodeprefix,
- cs.timezonename
- from company c
- inner join company_setting cs on c.companyid = cs.companyid;
- 
- -- postgres query warning: Multiple result sets are not supported in functions. Commented out: 
-select * from user_layout_configuration
- where employeeid = _employeeid;
- 
- -- postgres query warning: Multiple result sets are not supported in functions. Commented out: 
-select * from company_files where filerole = 'Company Primary Logo';
+    -- ==========================================
+    -- GET EMPLOYEE LOGIN DETAILS
+    -- ==========================================
+
+    IF (_mobileno IS NOT NULL AND _mobileno != '') THEN
+
+        SELECT
+            employeeid,
+            accesslevelid,
+            companyid
+        INTO
+            _employeeid,
+            _accesslevelid,
+            _companyid
+        FROM employeelogin
+        WHERE email = _emailid
+           OR mobile = _mobileno;
+
+    ELSE
+
+        SELECT
+            employeeid,
+            accesslevelid,
+            companyid
+        INTO
+            _employeeid,
+            _accesslevelid,
+            _companyid
+        FROM employeelogin
+        WHERE email = _emailid;
+
+    END IF;
+
+
+    -- ==========================================
+    -- CURRENT FINANCIAL YEAR
+    -- ==========================================
+
+    _currentfinancialyear := 0;
+
+    SELECT financialyear
+    INTO _currentfinancialyear
+    FROM company_setting
+    WHERE isprimary = true;
+
+
+    -- ==========================================
+    -- RESULT 1 : EMPLOYEE LOGIN DETAILS
+    -- ==========================================
+
+    OPEN _employee_result FOR
+
+    SELECT
+        e.employeeuid userid,
+        e.firstname,
+        e.lastname,
+        'NA' address,
+        e.email AS emailid,
+        e.mobile,
+        e.reportingmanagerid,
+
+        (
+            SELECT concat(firstname, ' ', lastname)
+            FROM employees
+            WHERE
+                CASE
+                    WHEN e.reportingmanagerid != 0
+                    THEN employeeuid = e.reportingmanagerid
+                    ELSE employeeuid = 1
+                END
+        ) managername,
+
+        (
+            SELECT email
+            FROM employees
+            WHERE
+                CASE
+                    WHEN e.reportingmanagerid != 0
+                    THEN employeeuid = e.reportingmanagerid
+                    ELSE employeeuid = 1
+                END
+        ) manageremailid,
+
+        e.designationid,
+        _accesslevelid roleid,
+        _usertypeid usertypeid,
+        l.organizationid,
+        l.companyid,
+
+        (
+            SELECT employeecurrentregime
+            FROM employee_declaration
+            WHERE employeeid = e.employeeuid
+              AND declarationfromyear = _currentfinancialyear
+        ) AS employeecurrentregime,
+
+        (
+            SELECT dob
+            FROM employeepersonaldetail
+            WHERE employeeuid = e.employeeuid
+        ) AS dob,
+
+        e.updatedon,
+        e.createdon,
+        e.workshiftid
+
+    FROM employees e
+
+    INNER JOIN employeelogin l
+        ON l.employeeid = e.employeeuid
+
+    WHERE
+        (e.email = _emailid OR e.mobile = _mobileno)
+        AND e.isactive = true;
+
+
+    -- ==========================================
+    -- RESULT 2 : MENU
+    -- ==========================================
+
+    IF (_accesslevelid = 1) THEN
+
+        OPEN _menu_result FOR
+
+        SELECT
+            rm.catagory,
+            rm.childs,
+            concat(_routeprefix, '/', rm.link) AS link,
+            rm.icon,
+            rm.badge,
+            rm.badgetype,
+            rm.accesscode,
+            1 AS permission
+
+        FROM rolesandmenu rm
+
+        WHERE rm.catagory <> 'Home'
+           OR rm.childs <> 'Home';
+
+    ELSE
+
+        OPEN _menu_result FOR
+
+        SELECT
+            rm.catagory,
+            rm.childs,
+            concat(_routeprefix, '/', rm.link) AS link,
+            rm.icon,
+            rm.badge,
+            rm.badgetype,
+            rm.accesscode,
+            r.accessibilityid AS permission
+
+        FROM rolesandmenu rm
+
+        LEFT JOIN role_accessibility_mapping r
+            ON r.accesscode = rm.accesscode
+
+        WHERE r.accesslevelid = _accesslevelid
+          AND r.accessibilityid > 0;
+
+    END IF;
+
+
+    -- ==========================================
+    -- RESULT 3 : EMPLOYEE LIST
+    -- ==========================================
+
+    OPEN _employee_list_result FOR
+
+    SELECT
+        employeeuid AS i,
+        concat(firstname, ' ', lastname) AS n,
+        email AS e,
+        designationid AS d
+
+    FROM employees
+
+    WHERE companyid = _companyid
+      AND isactive = true
+
+    ORDER BY updatedon DESC, createdon DESC
+
+    LIMIT _pagesize;
+
+
+    -- ==========================================
+    -- RESULT 4 : DEPARTMENTS
+    -- ==========================================
+
+    OPEN _department_result FOR
+
+    SELECT
+        roleid AS departmentid,
+        rolename AS departmentname
+
+    FROM org_hierarchy
+
+    WHERE isdepartment = true;
+
+
+    -- ==========================================
+    -- RESULT 5 : ORGANIZATION HIERARCHY
+    -- ==========================================
+
+    OPEN _hierarchy_result FOR
+
+    SELECT *
+    FROM org_hierarchy
+
+    WHERE isdepartment = false
+      AND isactive = true
+      AND companyid = _companyid;
+
+
+    -- ==========================================
+    -- RESULT 6 : COMPANY
+    -- ==========================================
+
+    OPEN _company_result FOR
+
+    SELECT
+        c.*,
+        cs.financialyear,
+        cs.employeecodelength,
+        cs.employeecodeprefix,
+        cs.timezonename
+
+    FROM company c
+
+    INNER JOIN company_setting cs
+        ON c.companyid = cs.companyid;
+
+
+    -- ==========================================
+    -- RESULT 7 : USER LAYOUT
+    -- ==========================================
+
+    OPEN _layout_result FOR
+
+    SELECT *
+    FROM user_layout_configuration
+
+    WHERE employeeid = _employeeid;
+
+
+    -- ==========================================
+    -- RESULT 8 : COMPANY LOGO
+    -- ==========================================
+
+    OPEN _logo_result FOR
+
+    SELECT *
+    FROM company_files
+
+    WHERE filerole = 'Company Primary Logo';
+
+
 EXCEPTION WHEN OTHERS THEN
+
     _sqlstate := SQLSTATE;
     _errortext := SQLERRM;
     _errorno := SQLSTATE;
-    _message := concat('ERROR ', _errorno, ' (', _sqlstate, '): ', _errortext);
-    CALL sp_logexception(_message, '', 'sp_employeelogin_auth', 1, 0, _result);
+
+    _message := concat(
+        'ERROR ',
+        _errorno,
+        ' (',
+        _sqlstate,
+        '): ',
+        _errortext
+    );
+
+    CALL sp_logexception(
+        _message,
+        '',
+        'sp_employeelogin_auth',
+        1,
+        0,
+        _result
+    );
+
+    RAISE EXCEPTION
+        'Error in sp_employeelogin_auth: %',
+        _message;
+
 END;
-$function$
-;
+$procedure$;
